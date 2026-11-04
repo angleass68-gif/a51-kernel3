@@ -1,0 +1,39 @@
+name: Build A51 kernel
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libtinfo5 lz4 cpio xz-utils
+      - name: Get kernel source from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1 -p Kernel.tar.gz -R ${{ github.repository }}
+          mkdir src && tar -xzf Kernel.tar.gz -C src
+      - name: Get clang-4639204 (Samsung toolchain)
+        run: |
+          mkdir clang
+          curl -L -o clang.tgz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/9b41cb0b796a44a37af39ce3a0b3b27fff6b4ce6/clang-4639204.tar.gz"
+          tar -xzf clang.tgz -C clang
+      - name: Build
+        run: |
+          cd src
+          export PLATFORM_VERSION=13 ARCH=arm64
+          ARGS="CC=$GITHUB_WORKSPACE/clang/bin/clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
+          make $ARGS exynos9610-a51xx_defconfig
+          make $ARGS olddefconfig
+          make $ARGS -j$(nproc) 2>&1 | tee ../build.log
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-output
+          path: |
+            build.log
+            src/.config
+            src/arch/arm64/boot/Image
